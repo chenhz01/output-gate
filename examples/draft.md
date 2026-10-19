@@ -12,5 +12,5 @@
 
 ## 附录
 历史版本预算为 8 万，本版调整为 12 万。
-支持邮箱：zhangsan@corp.internal 的内部同事，客户真名：海红面。
+支持邮箱：zhangsan@corp.internal 的内部同事，客户真名：Acme Foods。
 内网地址 10.12.3.8。
