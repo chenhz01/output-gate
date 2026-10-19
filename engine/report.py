@@ -1,0 +1,192 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+output-gate · 报告层 v1.0
+==================================
+四种输出，同一份结果：
+  text   人类可读（默认）
+  json   机器可读
+  sarif  静态分析结果交换格式 → **可直接被 GitHub Code Scanning 消费**
+          （这是别人接不接你的分界线：能进 CI 才算工具，只打印不算）
+  junit  测试报告格式 → CI 流水线通用
+
+引擎层不碰业务；报告层同样不碰业务，只认 results 列表。
+"""
+import json
+
+
+def _sev_sarif(status):
+    """internal status → SARIF level
+
+    ⚠ v1.0.1 修正：原表用 'BLOCK' 作键，但 effective_status 实际是
+    'FAIL'/'WARN'/'PASS'/'SKIP'/'INFO'/'ERROR'，于是 FAIL 落到 default 'note'，
+    **所有阻塞项都被降级成提示** —— GitHub Code Scanning 会直接忽略它们。
+    这正是「新增指标没验证它对已知案例能出正确值」的又一处实例。
+    """
+    # v2.0.0：NEEDS_VALIDATION 用 'note' 而非 'warning' —— 它没有 severity
+    # （没判完，不是「风险中等」），但必须出现在 Code Scanning 里让人看到
+    # 「哪里没判完」，否则又是静默。
+    if status == 'NEEDS_VALIDATION':
+        return 'note'
+    return {'FAIL': 'error', 'ERROR': 'error',
+            'WARN': 'warning', 'INFO': 'note',
+            'PASS': 'none', 'SKIP': 'none'}.get(status, 'note')
+
+
+def render_text(rep):
+    rs = rep['ruleset']
+    c = rep['counts']
+    L = []
+    L.append('=' * 74)
+    L.append(f"output-gate · 规则集 {rs} v{rep['ruleset_version']}")
+    L.append(f"目标：{rep['target']}")
+    meta = rep.get('meta') or {}
+    if meta.get('display'):
+        L.append(f"场景：{meta['display']}")
+    L.append('=' * 74)
+    for r in rep['results']:
+        icon = {'FAIL': '✗', 'WARN': '⚠', 'PASS': '✓', 'ERROR': '💥',
+                'SKIP': '–', 'INFO': 'ℹ',
+                'NEEDS_VALIDATION': '❓'}.get(r.effective_status, '?')
+        et = r.rule.meta.get('enforce_type', '')
+        L.append(f"{icon} [{r.rule.id}]({et}) {r.rule.desc}")
+        L.append(f"      → {r.detail}")
+    L.append('-' * 74)
+    c = rep['counts']
+    L.append(f"合计 {len(rep['results'])} 条：BLOCK {c['BLOCK']} ｜ WARN {c['WARN']} "
+             f"｜ NEEDS_VALIDATION {c.get('NEEDS_VALIDATION', 0)}"
+             f" ｜ INFO {c['INFO']} ｜ PASS {c['PASS']} ｜ SKIP {c['SKIP']}"
+             + (f" ｜ **ERROR {c['ERROR']}**" if c.get('ERROR') else ''))
+    for r in rep.get('errored', []):
+        L.append(f"  💥 [{r.rule.id}] 检查器异常 —— 规则失效，非检出问题。"
+                 f"退出码 3 表示规则集有 bug，不可当作「检查通过」")
+    for r in rep['downgraded']:
+        L.append(f"  ⇩ [{r.rule.id}] 置信降权 FAIL→WARN"
+                 f"（coverage {r.coverage} < floor {r.rule.meta.get('confidence_floor')}）")
+    for line in (meta.get('red_lines') or []):
+        L.append(f"  ⛔ {line}")
+    npr = meta.get('needs_pro_review') or []
+    high = [x for x in npr if x.get('risk') == 'high']
+    if high:
+        L.append('-' * 74)
+        L.append(f"⚠ 需专业复核 {len(npr)} 条（高风险 {len(high)} 条）"
+                 f"｜ 核证于 {meta.get('review_metadata', {}).get('reviewed_at', '—')}")
+        for x in high:
+            L.append(f"  ⚠ [{x.get('rule')}] {x.get('question', '')[:86]}")
+    if c['BLOCK']:
+        L.append('结论：不通过（存在 BLOCK 项），先修再发布。')
+    elif c['WARN']:
+        L.append('结论：无 BLOCK，但有 WARN，需人眼确认。')
+    elif c.get('NEEDS_VALIDATION'):
+        L.append(f"结论：无 BLOCK，但有 {c['NEEDS_VALIDATION']} 项未判完"
+                 f"（NEEDS_VALIDATION）—— 不是「通过」，是「没判完」，请补信息重跑。")
+    else:
+        L.append('结论：通过。')
+    return '\n'.join(L)
+
+
+def _verdict(status):
+    """internal status → verdict（对标 cloudflare/security-audit-skill 三态语义）
+
+    v1.1.0：机读出口增加 verdict 档位，与内部 severity 解耦——
+      confirmed        FAIL  机器 100% 确定的问题（对应 BLOCK）
+      needs_validation WARN  有确切未决事实，需人判断（对应 WARN）
+      pass             PASS  检查过、未发现问题（= 候选「有问题」被证伪）
+      not_covered      SKIP  该维度未覆盖（对应 coverage ledger 的缺口概念）
+      tool_error       ERROR 工具故障，不是对产出的判断
+    判定逻辑零改动——这只是把同一份结果翻译成更通用的机读词汇。
+    """
+    return {'FAIL': 'confirmed', 'WARN': 'needs_validation',
+            'PASS': 'pass', 'SKIP': 'not_covered',
+            'INFO': 'needs_validation', 'ERROR': 'tool_error',
+            'NEEDS_VALIDATION': 'needs_validation',
+            }.get(status, 'needs_validation')
+
+
+def render_json(rep):
+    findings = [{
+        'id': r.rule.id, 'severity': r.effective_status,
+        'verdict': _verdict(r.effective_status),
+        'raw_status': r.status, 'message': r.detail,
+        'enforce_type': r.rule.meta.get('enforce_type'),
+        'source': r.rule.meta.get('source'),
+        'confidence': r.confidence, 'coverage': r.coverage,
+    } for r in rep['results']]
+    verdict_counts = {}
+    for f in findings:
+        verdict_counts[f['verdict']] = verdict_counts.get(f['verdict'], 0) + 1
+    return json.dumps({
+        'engine': rep['engine'], 'ruleset': rep['ruleset'],
+        'ruleset_version': rep['ruleset_version'],
+        'target': rep['target'], 'exit_code': rep['exit_code'],
+        'counts': rep['counts'], 'verdicts': verdict_counts,
+        'findings': findings,
+    }, ensure_ascii=False, indent=2)
+
+
+def render_sarif(rep):
+    rules = {}
+    sarif_results = []
+    for r in rep['results']:
+        rid = r.rule.id
+        if rid not in rules:
+            rules[rid] = {
+                'id': rid, 'name': rid,
+                'shortDescription': {'text': r.rule.desc[:200]},
+                'properties': {
+                    k: v for k, v in r.rule.meta.items()
+                    if k in ('enforce_type', 'group', 'source', 'severity')
+                },
+            }
+        if r.effective_status in ('FAIL', 'WARN', 'NEEDS_VALIDATION'):
+            sarif_results.append({
+                'ruleId': rid,
+                'level': _sev_sarif(r.effective_status),
+                'message': {'text': r.detail},
+                'locations': [{
+                    'physicalLocation': {
+                        'artifactLocation': {'uri': rep['target']},
+                        'region': {'startLine': 1},
+                    }
+                }],
+            })
+    return json.dumps({
+        '$schema': 'https://json.schemastore.org/sarif-2.1.0.json',
+        'version': '2.1.0',
+        'runs': [{
+            'tool': {'driver': {
+                'name': 'output-gate',
+                'informationUri': 'https://github.com/',
+                'rules': list(rules.values()),
+            }},
+            'results': sarif_results,
+        }],
+    }, ensure_ascii=False, indent=2)
+
+
+def render_junit(rep):
+    c = rep['counts']
+    total = len(rep['results'])
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>',
+             f'<testsuite name="output-gate/{rep["ruleset"]}" '
+             f'tests="{total}" failures="{c["BLOCK"]}" skipped="{c["SKIP"]}">']
+    for r in rep['results']:
+        name = r.rule.id.replace('<', '&lt;')
+        detail = (r.detail or '').replace('&', '&amp;').replace('<', '&lt;')
+        if r.effective_status == 'FAIL':
+            lines.append(f'  <testcase name="{name}"><failure message="{detail}"/></testcase>')
+        elif r.effective_status == 'SKIP':
+            lines.append(f'  <testcase name="{name}"><skipped/></testcase>')
+        elif r.effective_status == 'NEEDS_VALIDATION':
+            # v2.0.0：没判完 ≠ 通过。JUnit 里标 skipped（带原因），
+            # 不允许它落进空 testcase（空 = 通过，又是静默假绿）。
+            lines.append(f'  <testcase name="{name}">'
+                         f'<skipped message="needs_validation: {detail}"/></testcase>')
+        else:
+            lines.append(f'  <testcase name="{name}"/>')
+    lines.append('</testsuite>')
+    return '\n'.join(lines)
+
+
+RENDERERS = {'text': render_text, 'json': render_json,
+             'sarif': render_sarif, 'junit': render_junit}
