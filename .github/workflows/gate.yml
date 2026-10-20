@@ -29,3 +29,38 @@ jobs:
           fi
           echo "exit=$code (expected 1)"
           exit 0
+
+      - name: design ruleset: quiet on clean, loud on blocked
+        run: |
+          set +e
+          python gate.py run design rulesets/design/fixtures/design_pass.html > a.txt 2>&1; ca=$?
+          python gate.py run design rulesets/design/fixtures/design_fail.html > b.txt 2>&1; cb=$?
+          cat a.txt b.txt
+          [ "$ca" = "0" ] || { echo "::error title=output-gate::design clean fixture exit=$ca (expected 0) — a gate that fires on clean input is worse than no gate"; exit 1; }
+          [ "$cb" = "1" ] || { echo "::error title=design blocked fixture exit=$cb (expected 1) — this ruleset is shipped but does not fail"; exit 1; }
+          echo "design: clean=0 blocked=1"
+      - name: ecommerce ruleset: quiet on clean, loud on blocked
+        run: |
+          set +e
+          python gate.py run ecommerce rulesets/ecommerce/fixtures/listing_clean.json > a.txt 2>&1; ca=$?
+          python gate.py run ecommerce rulesets/ecommerce/fixtures/listing_fail.json > b.txt 2>&1; cb=$?
+          cat a.txt b.txt
+          [ "$ca" = "0" ] || { echo "::error title=output-gate::ecommerce clean fixture exit=$ca (expected 0) — a gate that fires on clean input is worse than no gate"; exit 1; }
+          [ "$cb" = "1" ] || { echo "::error title=ecommerce blocked fixture exit=$cb (expected 1) — this ruleset is shipped but does not fail"; exit 1; }
+          echo "ecommerce: clean=0 blocked=1"
+      - name: music ruleset: quiet on clean, loud on blocked
+        run: |
+          set +e
+          python gate.py run music examples/track_pass.json > a.txt 2>&1; ca=$?
+          python gate.py run music examples/track_fail.json > b.txt 2>&1; cb=$?
+          cat a.txt b.txt
+          [ "$ca" = "0" ] || { echo "::error title=output-gate::music clean fixture exit=$ca (expected 0) — a gate that fires on clean input is worse than no gate"; exit 1; }
+          [ "$cb" = "1" ] || { echo "::error title=music blocked fixture exit=$cb (expected 1) — this ruleset is shipped but does not fail"; exit 1; }
+          echo "music: clean=0 blocked=1"
+      - name: shortvideo ruleset: quiet on clean, loud on blocked
+        run: |
+          set +e
+          python gate.py run shortvideo rulesets/shortvideo/fixtures/script_fail.json > a.txt 2>&1; ca=$?
+          cat a.txt
+          [ "$ca" = "1" ] || { echo "::error title=output-gate::shortvideo blocked fixture exit=$ca (expected 1) — this ruleset is shipped but does not fail"; exit 1; }
+          echo "shortvideo: blocked=1 (only the failing fixture is committed for this ruleset)"

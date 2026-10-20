@@ -4,7 +4,7 @@
 
 <h1 align="center">output-gate</h1>
 
-<p align="center"><b>Before AI-written text ships, run the four checks it always fails.</b><br><sub>7 files (a small engine + rulesets) · zero dependencies · stdlib only</sub></p>
+<p align="center"><b>Before AI-written text ships, run the four checks it always fails.</b><br><sub>11 files (a small engine + rulesets) · zero dependencies · stdlib only</sub></p>
 
 <p align="center"><a href="https://github.com/chenhz01/output-gate/actions/workflows/gate.yml"><img src="https://github.com/chenhz01/output-gate/actions/workflows/gate.yml/badge.svg" alt="tests"></a> <img src="https://img.shields.io/badge/python-3.9%2B-3776AB?style=flat-square" alt="python"> <img src="https://img.shields.io/badge/dependencies-0-2ea44f?style=flat-square" alt="deps"> <img src="https://img.shields.io/badge/license-Apache--2.0%20%2B%20CC%20BY%204.0-blue?style=flat-square" alt="license"></p>
 
@@ -75,9 +75,29 @@ output-gate · 规则集 ai-output v1.1.0
 
 Being explicit here is cheaper than a wrong expectation later.
 
+## Rulesets
+
+52 rules across five rulesets — one engine, one directory per vertical.
+`python gate.py list` prints this list live, with each ruleset's own version.
+
+| Ruleset | What it checks | Rules | Version | Run it (exits 1) |
+|---|---|---|---|---|
+| `ai-output` | AI 产出通用体检 | 10 | v1.1.0 | `python gate.py run ai-output examples/draft.md` |
+| `design` | 设计输出体检 | 5 | v0.1.0 | `python gate.py run design rulesets/design/fixtures/design_fail.html` |
+| `ecommerce` | 跨境电商 listing 合规 | 10 | v2026-10-11.0 | `python gate.py run ecommerce rulesets/ecommerce/fixtures/listing_fail.json` |
+| `music` | 音乐发行前合规体检 | 20 | v2026-10-04.1 | `python gate.py run music examples/track_fail.json` |
+| `shortvideo` | 短视频 / 口播脚本合规 | 7 | v1.0.0 | `python gate.py run shortvideo rulesets/shortvideo/fixtures/script_fail.json` |
+
+The bundled `examples/` and `rulesets/*/fixtures/` are committed, so every
+command above reproduces on a fresh clone. The clean fixture of each ruleset
+exits `0` and the failing one exits `1`; CI asserts both directions, so a green
+badge means the ruleset fired when it should **and** stayed quiet when it should.
+
+Adding a vertical means dropping in a directory — the engine does not change.
+
 ## Exit codes
 
-`0` = no blocking finding. `1` = at least one BLOCK rule fired. `2` = bad input or unknown ruleset.
+`0` = clean (no BLOCK, no WARN). `1` = at least one BLOCK rule fired. `2` = WARN-level findings only — nothing blocks the build. `3` = you asked for something this gate could not do: a malformed command line, an unknown ruleset, an unreadable file, or an engine failure (it prints `✗ …` first). **`2` used to double as the usage-error code; since 2026-10-20 a mistyped command exits 3, so a non-zero badge always means a real finding.**
 
 ## Install
 

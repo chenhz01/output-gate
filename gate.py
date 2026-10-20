@@ -6,8 +6,8 @@
 output-gate · 统一入口
 ==============================
 用法：
-  python aoa.py list
-  python aoa.py <ruleset> <target.json> [--format text|json|sarif|junit]
+  python gate.py list
+  python gate.py run <ruleset> <target> [--format text|json|sarif|junit]
 
 设计：引擎不认识业务；这里只做参数解析与规则集发现。
 """
@@ -78,8 +78,25 @@ def _ledger(args, rep):
     return newly_failed, resolved, first_run
 
 
+class _Parser(argparse.ArgumentParser):
+    """用法错误退 3，不退 argparse 默认的 2。
+
+    2026-10-20 实测：漏传一个参数时 argparse 默认 exit 2，而引擎把 2 定义为
+    「跑完了，有 WARN 级发现」。于是 CI 里把命令拼错（漏传文件、拼错 flag）
+    拿到的是和「有警告」一模一样的退出码——调用方若只把 1 当失败，
+    拼错命令就等于静默降级成「有警告」，门还挂着绿脸。
+    3 在本仓的语义是「你要的事我没做到」（未知规则集 / 读不了文件 / 引擎故障），
+    用法错误归入这一类；2 从此只剩「跑过了，有 WARN」一个含义。
+    """
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print('✗ 用法错误: %s' % message, file=sys.stderr)
+        sys.exit(EXIT_CODES['error'])
+
+
 def main():
-    ap = argparse.ArgumentParser(prog='output-gate', description='Agent 输出体检引擎')
+    ap = _Parser(prog='output-gate', description='Agent 输出体检引擎')
     sub = ap.add_subparsers(dest='cmd')
 
     sub.add_parser('list', help='列出可用规则集')
