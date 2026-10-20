@@ -25,7 +25,7 @@ python gate.py run ai-output examples/draft.md --format text
 <details>
 <summary><b>Real output</b> — produced by the bundled <code>examples/</code>, not a mock-up</summary>
 
-```text
+````text
 ==========================================================================
 output-gate · 规则集 ai-output v1.1.0
 目标：客户方案 v3
@@ -57,7 +57,7 @@ output-gate · 规则集 ai-output v1.1.0
   ⛔ WARN 项需人判断 —— 不要把 WARN 当成「有问题」的证据
   ⛔ 「无源数字」不等于「数据是假的」，只等于「读者无法验证」
 结论：不通过（存在 BLOCK 项），先修再发布。
-```
+````
 
 </details>
 
@@ -104,14 +104,14 @@ Python 3.9+. Nothing to `pip install` — stdlib only.
 # .github/workflows/gates.yml
 - uses: actions/checkout@v4
 
-- uses: chenhz01/output-gate@v0.1.2
+- uses: chenhz01/output-gate@v0.1.3
   with:
     # IMPORTANT: this path is inside YOUR repository.
     # The examples/ in this repo are NOT in your workspace — pass your own files.
     args: "run ai-output path/to/draft.md --format text"
 ```
 
-Pin the tag (`@v0.1.2`) rather than `@main` — `main` moves.
+Pin the tag (`@v0.1.3`) rather than `@main` — `main` moves.
 Check [Releases](https://github.com/chenhz01/output-gate/releases) for the newest tag; `v0.1.0` predates the
 fix that makes a mistyped path fail instead of silently passing.
 
