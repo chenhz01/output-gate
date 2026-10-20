@@ -77,7 +77,7 @@ Being explicit here is cheaper than a wrong expectation later.
 
 ## Exit codes
 
-`0` = no blocking finding; `1` = at least one BLOCK rule fired.
+`0` = no blocking finding. `1` = at least one BLOCK rule fired. `2` = bad input or unknown ruleset.
 
 ## Install
 
