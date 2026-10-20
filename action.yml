@@ -1,5 +1,5 @@
 name: output-gate
-description: Before AI-written text ships, run the four checks it always fails.
+description: AI output audit: run the four checks AI-written text always fails, before it ships. Zero-dependency CLI.
 branding:
   icon: shield
   color: blue
